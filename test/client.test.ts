@@ -65,6 +65,23 @@ describe('FatSecretClient', () => {
     const client = new FatSecretClient({ consumerKey: 'ck', consumerSecret: 'cs', fetchImpl: fetchMock });
     await expect(client.publicRequest('food_entry.create', {})).rejects.toThrow(/not a public method/);
   });
+
+  it('refuses Premier-only methods on the Basic tier with an explanatory error, without calling out', async () => {
+    const originalPremier = process.env.FATSECRET_PREMIER;
+    delete process.env.FATSECRET_PREMIER;
+    const fetchMock = vi.fn<typeof fetch>();
+    const client = new FatSecretClient({ consumerKey: 'ck', consumerSecret: 'cs', fetchImpl: fetchMock });
+    const dir = mkdtempSync(join(tmpdir(), 'fatsecret-premier-'));
+    const store = new TokenStore({ path: join(dir, 'store.json'), encryptionKey: 'test-encryption-key-1234567890' });
+    store.setTokens('u@x.dk', { oauthToken: 't', oauthTokenSecret: 's', authMode: 'three_legged', connectedAt: Date.now() });
+
+    await expect(client.userRequest('u@x.dk', store, 'food.create', {})).rejects.toThrow(/Premier Exclusive/);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    rmSync(dir, { recursive: true, force: true });
+    if (originalPremier === undefined) delete process.env.FATSECRET_PREMIER;
+    else process.env.FATSECRET_PREMIER = originalPremier;
+  });
 });
 
 describe('OAuth2ClientCredentials', () => {

@@ -1,5 +1,5 @@
 import { FatSecretHttpError } from '../errors.js';
-import { findMethod } from './catalog.js';
+import { findMethod, premierEnabled, type FatSecretMethod } from './catalog.js';
 import { OAuth1Signer, type OAuth1Token } from './oauth1.js';
 import { OAuth2ClientCredentials } from './oauth2.js';
 import type { TokenStore } from './token-store.js';
@@ -19,6 +19,19 @@ export interface FatSecretClientOptions {
  * surface for most write methods. Both auth surfaces (OAuth2 bearer / OAuth1
  * signed) are layered over this one endpoint shape. */
 const DEFAULT_BASE_URL = 'https://platform.fatsecret.com/rest/server.api';
+
+/**
+ * Fail fast with an explanation rather than letting FatSecret return an opaque
+ * error for a method the configured tier can't call.
+ */
+function assertMethodAvailable(method: FatSecretMethod): void {
+  if (method.premierOnly && !premierEnabled()) {
+    throw new Error(
+      `${method.id} is Premier Exclusive and this app is on the free Basic tier. ` +
+        'Set FATSECRET_PREMIER=true only if the FatSecret app has actually been upgraded to Premier.',
+    );
+  }
+}
 
 function assertHttpsOrLoopback(url: string): void {
   const parsed = new URL(url);
@@ -60,6 +73,7 @@ export class FatSecretClient {
     if (method.authSurface !== 'oauth2-public') {
       throw new Error(`${methodId} is not a public method; call userRequest() instead.`);
     }
+    assertMethodAvailable(method);
     const token = await this.oauth2.getToken();
     const url = buildUrl(this.baseUrl, { method: methodId, format: 'json', ...cleanParams(params) });
     return this.send(url, method.httpMethod, { Authorization: `Bearer ${token}` });
@@ -72,6 +86,7 @@ export class FatSecretClient {
     if (method.authSurface !== 'oauth1-private') {
       throw new Error(`${methodId} is not a private method; call publicRequest() instead.`);
     }
+    assertMethodAvailable(method);
     const stored = store.getTokens(user);
     if (!stored) {
       throw new Error('NOT_CONNECTED');

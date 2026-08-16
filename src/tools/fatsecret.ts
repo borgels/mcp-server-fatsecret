@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 import { formatUnknownError } from '../errors.js';
 import { writeAuditEvent } from '../fatsecret/audit.js';
-import { findMethod, searchCapabilities } from '../fatsecret/catalog.js';
+import { findMethod, premierEnabled, searchCapabilities } from '../fatsecret/catalog.js';
 import type { FatSecretClient } from '../fatsecret/client.js';
 import { fromFatSecretDate, toFatSecretDate, todayFatSecretDate } from '../fatsecret/date.js';
 import { IdempotencyCache } from '../fatsecret/idempotency.js';
@@ -138,7 +138,13 @@ export function registerFatSecretTools(
 
   server.registerTool(
     'fatsecret_search_foods',
-    { title: 'Search Foods (FatSecret)', description: 'Search the public food database by keyword.', inputSchema: { query: z.string().min(1), pageNumber: z.number().int().min(0).default(0), maxResults: z.number().int().min(1).max(50).default(20) }, annotations: READ_ANNOTATIONS },
+    {
+      title: 'Search Foods (FatSecret)',
+      description:
+        "Search FatSecret's public food database by keyword. Each result's food_description carries per-serving calories and macros; use fatsecret_get_food for structured serving data. NOTE: on the free Basic tier this database is US-only — for Danish foods, look the item up in a Danish food-data source first, then log the closest match here with the serving quantity scaled so the macros line up.",
+      inputSchema: { query: z.string().min(1), pageNumber: z.number().int().min(0).default(0), maxResults: z.number().int().min(1).max(50).default(20) },
+      annotations: READ_ANNOTATIONS,
+    },
     async input =>
       run('fatsecret_search_foods', options, input, async () =>
         json(await cachedPublic(client, 'foods.search', { search_expression: input.query, page_number: input.pageNumber, max_results: input.maxResults })),
@@ -449,19 +455,24 @@ export function registerFatSecretTools(
 
   // --- Favorites ---
 
-  server.registerTool(
-    'fatsecret_get_favorites',
-    { title: 'Get Favorites (FatSecret)', description: 'Your favorite foods and recipes.', inputSchema: {}, annotations: READ_ANNOTATIONS },
-    async input =>
-      run('fatsecret_get_favorites', options, input, async () =>
-        json({ foods: await userGet(client, store, options, 'foods.get_favorites', {}), recipes: await userGet(client, store, options, 'recipes.get_favorites', {}) }),
-      ),
-  );
+  // Listing favorites is Premier Exclusive (adding/removing them is not), so on
+  // the Basic tier this tool is not registered at all rather than offered and
+  // always failing.
+  if (premierEnabled()) {
+    server.registerTool(
+      'fatsecret_get_favorites',
+      { title: 'Get Favorites (FatSecret)', description: 'Your favorite foods and recipes.', inputSchema: {}, annotations: READ_ANNOTATIONS },
+      async input =>
+        run('fatsecret_get_favorites', options, input, async () =>
+          json({ foods: await userGet(client, store, options, 'foods.get_favorites', {}), recipes: await userGet(client, store, options, 'recipes.get_favorites', {}) }),
+        ),
+    );
+  }
 
   const favoriteMethod = z.enum(['food.add_favorite', 'food.delete_favorite', 'recipe.add_favorite', 'recipe.delete_favorite']);
   server.registerTool(
     'fatsecret_prepare_favorite_change',
-    { title: 'Prepare: Favorite Change (FatSecret)', description: 'Dry-run: mark/unmark a food or recipe as a favorite.', inputSchema: { method: favoriteMethod, params: paramsSchema, reason: z.string().min(1) }, annotations: WRITE_ANNOTATIONS },
+    { title: 'Prepare: Favorite Change (FatSecret)', description: 'Dry-run: mark/unmark a food or recipe as a favorite. (Adding/removing works on the Basic tier; listing favorites back requires Premier.)', inputSchema: { method: favoriteMethod, params: paramsSchema, reason: z.string().min(1) }, annotations: WRITE_ANNOTATIONS },
     async input =>
       run('fatsecret_prepare_favorite_change', options, input, async () =>
         json(prepareOperation({ capability: 'fatsecret_prepare_favorite_change', methodId: input.method, user: requireUser(options.onBehalfOf), params: input.params, reason: input.reason })),
@@ -470,14 +481,17 @@ export function registerFatSecretTools(
 
   // --- Custom food ---
 
-  server.registerTool(
-    'fatsecret_prepare_custom_food_create',
-    { title: 'Prepare: Create Custom Food (FatSecret)', description: 'Dry-run: create a custom/private food item (name + nutrition facts) for later logging.', inputSchema: { params: paramsSchema, reason: z.string().min(1) }, annotations: WRITE_ANNOTATIONS },
-    async input =>
-      run('fatsecret_prepare_custom_food_create', options, input, async () =>
-        json(prepareOperation({ capability: 'fatsecret_prepare_custom_food_create', methodId: 'food.create', user: requireUser(options.onBehalfOf), params: input.params, reason: input.reason })),
-      ),
-  );
+  // food.create is Premier Exclusive — same reasoning as favorites above.
+  if (premierEnabled()) {
+    server.registerTool(
+      'fatsecret_prepare_custom_food_create',
+      { title: 'Prepare: Create Custom Food (FatSecret)', description: 'Dry-run: create a custom/private food item (name + nutrition facts) for later logging.', inputSchema: { params: paramsSchema, reason: z.string().min(1) }, annotations: WRITE_ANNOTATIONS },
+      async input =>
+        run('fatsecret_prepare_custom_food_create', options, input, async () =>
+          json(prepareOperation({ capability: 'fatsecret_prepare_custom_food_create', methodId: 'food.create', user: requireUser(options.onBehalfOf), params: input.params, reason: input.reason })),
+        ),
+    );
+  }
 
   // --- Commit + long tail ---
 

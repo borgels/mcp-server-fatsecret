@@ -68,6 +68,35 @@ a single fixed identity over stdio.
 }
 ```
 
+## API tiers (Basic vs Premier) — read this before wondering why a food is missing
+
+FatSecret's Platform API has a free **Basic** tier and a paid **Premier** tier,
+and the split materially affects what this server can do. Note the paid
+*consumer app* subscription is a different product and does **not** unlock any
+of this.
+
+On **Basic** (the default):
+- The food database is **US-only**. `region=DK` and other localization is a
+  Premier feature, so non-US foods largely won't be found.
+- Only `foods.search` **v1** is available (v2–v5 are Premier).
+- **Custom foods (`food.create`) are Premier-only** — you cannot inject your own
+  nutrition values.
+- **Listing favorites is Premier-only** (`foods.get_favorites`, most-eaten,
+  recently-eaten). Adding and removing favorites still works.
+- Everything that actually matters for a diary **does** work: logging, editing
+  and deleting food entries, copying days, weight, saved meals, and exercise.
+
+Set `FATSECRET_PREMIER=true` **only** if the app has genuinely been upgraded.
+Tools backed by Premier-only methods are not registered at all on Basic, so
+callers are never offered a tool that can only fail, and any direct call to one
+fails fast with an explanation instead of an opaque upstream error.
+
+**Working with non-US foods on Basic:** look the item up in a local food-data
+source (e.g. Open Food Facts or a national food-composition database) to get its
+real macros, then log the closest match from FatSecret's database with the
+serving quantity scaled so the calories and macros line up. Search results
+include per-serving macros in `food_description` to make that matching possible.
+
 ## Write policy
 
 - `FATSECRET_ENABLE_WRITES=true` — required for any mutating call; off by

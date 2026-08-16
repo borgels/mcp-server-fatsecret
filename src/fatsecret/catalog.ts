@@ -10,6 +10,12 @@ export interface FatSecretMethod {
   risk: CapabilityRisk;
   summary: string;
   keywords: string[];
+  /**
+   * Marked "Premier Exclusive" in FatSecret's docs — calling these on the free
+   * Basic tier fails. Tools backed by them are only registered when
+   * FATSECRET_PREMIER=true, so callers aren't offered tools that can only error.
+   */
+  premierOnly?: boolean;
 }
 
 /**
@@ -67,7 +73,7 @@ export const FATSECRET_METHODS: FatSecretMethod[] = [
   { id: 'saved_meal_item.delete', httpMethod: 'POST', authSurface: 'oauth1-private', risk: 'commit', summary: 'Remove a food from a saved meal.', keywords: ['saved meal', 'delete'] },
 
   // --- Favorites (OAuth1 private) — cheap/reversible, still audited ---
-  { id: 'foods.get_favorites', httpMethod: 'GET', authSurface: 'oauth1-private', risk: 'read', summary: 'Your favorite foods.', keywords: ['favorite', 'food'] },
+  { id: 'foods.get_favorites', httpMethod: 'GET', authSurface: 'oauth1-private', risk: 'read', summary: 'Your favorite foods. (Premier only — adding/removing favorites works on Basic, but listing them does not.)', keywords: ['favorite', 'food'], premierOnly: true },
   { id: 'food.add_favorite', httpMethod: 'POST', authSurface: 'oauth1-private', risk: 'draft', summary: 'Mark a food as a favorite.', keywords: ['favorite', 'add'] },
   { id: 'food.delete_favorite', httpMethod: 'POST', authSurface: 'oauth1-private', risk: 'draft', summary: 'Unmark a food as a favorite.', keywords: ['favorite', 'delete'] },
   { id: 'recipes.get_favorites', httpMethod: 'GET', authSurface: 'oauth1-private', risk: 'read', summary: 'Your favorite recipes.', keywords: ['favorite', 'recipe'] },
@@ -75,7 +81,7 @@ export const FATSECRET_METHODS: FatSecretMethod[] = [
   { id: 'recipe.delete_favorite', httpMethod: 'POST', authSurface: 'oauth1-private', risk: 'draft', summary: 'Unmark a recipe as a favorite.', keywords: ['favorite', 'delete'] },
 
   // --- Custom food (OAuth1 private) ---
-  { id: 'food.create', httpMethod: 'POST', authSurface: 'oauth1-private', risk: 'commit', summary: 'Create a custom/private food item (name + nutrition facts) for later logging.', keywords: ['custom food', 'create'] },
+  { id: 'food.create', httpMethod: 'POST', authSurface: 'oauth1-private', risk: 'commit', summary: 'Create a custom/private food item (name + nutrition facts) for later logging. (Premier only.)', keywords: ['custom food', 'create'], premierOnly: true },
 ];
 
 export function findMethod(id: string): FatSecretMethod {
@@ -91,9 +97,19 @@ export interface Capability {
   summary: string;
 }
 
+/** True when the configured FatSecret app has the paid Premier tier. */
+export function premierEnabled(): boolean {
+  return process.env.FATSECRET_PREMIER === 'true';
+}
+
+/** Methods callable on the configured tier — Premier-only methods are hidden on Basic. */
+export function availableMethods(): FatSecretMethod[] {
+  return premierEnabled() ? FATSECRET_METHODS : FATSECRET_METHODS.filter(m => !m.premierOnly);
+}
+
 export function searchCapabilities(query: string, limit = 20): Capability[] {
   const q = query.trim().toLowerCase();
-  const pool = FATSECRET_METHODS.map(m => ({ id: m.id, summary: m.summary, keywords: m.keywords }));
+  const pool = availableMethods().map(m => ({ id: m.id, summary: m.summary, keywords: m.keywords }));
   if (!q) {
     return pool.slice(0, limit).map(({ id, summary }) => ({ id, summary }));
   }
