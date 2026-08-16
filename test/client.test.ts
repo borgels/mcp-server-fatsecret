@@ -85,6 +85,42 @@ describe('FatSecretClient', () => {
 });
 
 describe('OAuth2ClientCredentials', () => {
+  it('prefers the dedicated OAuth2 credentials over the OAuth1 consumer pair', async () => {
+    const original = { ...process.env };
+    process.env.FATSECRET_CONSUMER_KEY = 'oauth1-key';
+    process.env.FATSECRET_CONSUMER_SECRET = 'oauth1-secret';
+    process.env.FATSECRET_OAUTH2_CLIENT_ID = 'oauth2-id';
+    process.env.FATSECRET_OAUTH2_CLIENT_SECRET = 'oauth2-secret';
+
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse({ access_token: 'AT', expires_in: 86400 }));
+    await new OAuth2ClientCredentials({ fetchImpl: fetchMock }).getToken();
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const auth = (init.headers as Record<string, string>).Authorization ?? '';
+    const decoded = Buffer.from(auth.replace('Basic ', ''), 'base64').toString();
+    // Using the OAuth1 secret here is what caused "Invalid signature" in production.
+    expect(decoded).toBe('oauth2-id:oauth2-secret');
+
+    process.env = original;
+  });
+
+  it('falls back to the consumer pair when no OAuth2 credentials are set', async () => {
+    const original = { ...process.env };
+    delete process.env.FATSECRET_OAUTH2_CLIENT_ID;
+    delete process.env.FATSECRET_OAUTH2_CLIENT_SECRET;
+    process.env.FATSECRET_CONSUMER_KEY = 'only-key';
+    process.env.FATSECRET_CONSUMER_SECRET = 'only-secret';
+
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse({ access_token: 'AT', expires_in: 86400 }));
+    await new OAuth2ClientCredentials({ fetchImpl: fetchMock }).getToken();
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const decoded = Buffer.from(((init.headers as Record<string, string>).Authorization ?? '').replace('Basic ', ''), 'base64').toString();
+    expect(decoded).toBe('only-key:only-secret');
+
+    process.env = original;
+  });
+
   it('caches the token and only refetches after the expiry buffer', async () => {
     const fetchMock = vi.fn<typeof fetch>();
     fetchMock.mockResolvedValueOnce(jsonResponse({ access_token: 'AT1', expires_in: 86400 }));
