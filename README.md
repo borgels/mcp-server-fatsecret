@@ -114,7 +114,14 @@ include per-serving macros in `food_description` to make that matching possible.
 Every write tool follows: `fatsecret_prepare_*` (dry-run, returns
 `operationHash`) → `fatsecret_commit_prepared_operation` (requires the
 operation object back, a restated `confirmOperationHash`, and a fresh
-`idempotencyKey`). The idempotency key is a **local-only** safety net —
+`idempotencyKey`). The `operationHash` is an HMAC-SHA256 signature keyed by
+`FATSECRET_PREPARE_SECRET` (a random per-process key if unset — set it
+explicitly when running several replicas or if prepared operations must
+survive a restart). A prepared operation expires after 15 minutes, can only be
+committed by the user who prepared it, and policy (`FATSECRET_ENABLE_WRITES`,
+`FATSECRET_POLICY_PATH`, …) is re-evaluated at commit time; the
+`policyDecision` in the preview is informational only. Idempotency keys are
+scoped per user. The idempotency key is a **local-only** safety net —
 FatSecret's API has no server-side idempotency support, unlike some other
 providers — so retrying a commit with the same key only protects you within
 this process's lifetime, not across a restart.
@@ -154,7 +161,9 @@ encrypted at rest (AES-256-GCM).
 `dist/http.js`) exposes `/mcp` over Streamable HTTP, gated by
 `MCP_HTTP_TOKEN`. Intended to sit behind a reverse proxy that authenticates
 callers and forwards their identity as `X-MCP-User` (only trusted when
-`FATSECRET_TRUST_FORWARDED_USER=true`).
+`FATSECRET_TRUST_FORWARDED_USER=true`). The bearer token is compared in constant time, and the
+server refuses to start if `FATSECRET_TRUST_FORWARDED_USER=true` but
+`MCP_HTTP_TOKEN` is empty.
 
 ## Verification
 
