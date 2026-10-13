@@ -3,11 +3,11 @@ import { z } from 'zod/v4';
 import { formatUnknownError } from '../errors.js';
 import { writeAuditEvent } from '../fatsecret/audit.js';
 import { findMethod, premierEnabled, searchCapabilities } from '../fatsecret/catalog.js';
-import type { FatSecretClient } from '../fatsecret/client.js';
+import { isReservedParamName, type FatSecretClient } from '../fatsecret/client.js';
 import { fromFatSecretDate, toFatSecretDate, todayFatSecretDate } from '../fatsecret/date.js';
 import { IdempotencyCache } from '../fatsecret/idempotency.js';
-import { prepareOperation, verifyPreparedOperation, type PreparedOperation } from '../fatsecret/operations.js';
-import { requireUser } from '../fatsecret/policy.js';
+import { prepareOperation, verifyPreparedOperation } from '../fatsecret/operations.js';
+import { checkPolicy, loadPolicy, requireUser } from '../fatsecret/policy.js';
 import { SearchCache } from '../fatsecret/search-cache.js';
 import { normalizeServings, pickServing } from '../fatsecret/serving.js';
 import type { TokenStore } from '../fatsecret/token-store.js';
@@ -22,11 +22,17 @@ const DESTRUCTIVE_ANNOTATIONS = { readOnlyHint: false, destructiveHint: true, id
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
 const idempotencyKey = z.string().min(8).describe('A unique key you control; retrying a commit with the same key + unchanged operation returns the original result instead of double-posting.');
-const paramsSchema = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]));
+const paramsSchema = z
+  .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+  .refine(params => !Object.keys(params).some(isReservedParamName), {
+    message: 'params may not include reserved keys (method, format, oauth_*).',
+  });
 
 // Shared across all per-request McpServer instances within this process —
 // public search results aren't user-specific, and idempotency keys are a
-// process-local safety net (see idempotency.ts), so both are fine to share.
+// process-local safety net (see idempotency.ts). Idempotency keys are always
+// scoped to the verified user (`${user}:${key}`) so one user's key can never
+// return another user's cached result.
 const searchCache = new SearchCache();
 const idempotency = new IdempotencyCache();
 
@@ -397,7 +403,14 @@ export function registerFatSecretTools(
     async input =>
       run('fatsecret_log_one_off_exercise', options, input, async () => {
         const user = requireUser(options.onBehalfOf);
-        const check = idempotency.check(input.idempotencyKey, `one-off:${user}:${input.exerciseId}:${input.minutes}:${input.date}`);
+        for (const methodId of ['exercise_entries.save_template', 'exercise_entries.commit_day']) {
+          const decision = checkPolicy({ capability: 'fatsecret_log_one_off_exercise', methodId, isMutation: true });
+          if (!decision.allowed) {
+            throw new Error(`Operation not allowed by policy: ${decision.reason}`);
+          }
+        }
+        const scopedKey = `${user}:${input.idempotencyKey}`;
+        const check = idempotency.check(scopedKey, `one-off:${user}:${input.exerciseId}:${input.minutes}:${input.date}`);
         if (check.hit) return json(check.result);
 
         const dayOfWeek = new Date(`${input.date}T00:00:00Z`).getUTCDay();
@@ -411,7 +424,7 @@ export function registerFatSecretTools(
           await client.userRequest(user, store, 'exercise_entries.commit_day', { date: toFatSecretDate(input.date) });
           steps.push({ step: 'commit_day', ok: true });
           const result = { committed: true, steps };
-          idempotency.record(input.idempotencyKey, `one-off:${user}:${input.exerciseId}:${input.minutes}:${input.date}`, result);
+          idempotency.record(scopedKey, `one-off:${user}:${input.exerciseId}:${input.minutes}:${input.date}`, result);
           return json(result);
         } catch (error) {
           throw new Error(
@@ -509,24 +522,16 @@ export function registerFatSecretTools(
     },
     async input =>
       run('fatsecret_commit_prepared_operation', options, input, async () => {
-        const operation = verifyPreparedOperation(input.operation as unknown as PreparedOperation);
+        const user = requireUser(options.onBehalfOf);
+        const operation = verifyPreparedOperation(input.operation, { confirmOperationHash: input.confirmOperationHash, user });
         if (operation.methodId === 'profile.create') {
           throw new Error('profile.create must be committed via fatsecret_commit_profile_create, not this tool.');
         }
-        if (operation.operationHash !== input.confirmOperationHash) {
-          throw new Error('confirmOperationHash does not match the operation.');
-        }
-        if (!operation.policyDecision.allowed) {
-          throw new Error(`Operation not allowed by policy: ${operation.policyDecision.reason}`);
-        }
-        const check = idempotency.check(input.idempotencyKey, operation.operationHash);
+        const scopedKey = `${user}:${input.idempotencyKey}`;
+        const check = idempotency.check(scopedKey, operation.operationHash);
         if (check.hit) return json(check.result);
-        const user = requireUser(options.onBehalfOf);
-        if (operation.user !== user) {
-          throw new Error('This prepared operation was created for a different identity.');
-        }
         const result = await client.userRequest(user, store, operation.methodId, operation.params);
-        idempotency.record(input.idempotencyKey, operation.operationHash, result);
+        idempotency.record(scopedKey, operation.operationHash, result);
         return json(result);
       }),
   );
@@ -541,25 +546,24 @@ export function registerFatSecretTools(
     },
     async input =>
       run('fatsecret_commit_profile_create', options, input, async () => {
-        const operation = verifyPreparedOperation(input.operation as unknown as PreparedOperation);
+        const user = requireUser(options.onBehalfOf);
+        if (!loadPolicy().profileCreateEnabled) {
+          throw new Error('profile.create is disabled (set FATSECRET_ENABLE_PROFILE_CREATE=true for dev/test use only).');
+        }
+        // Verifies signature, expiry, operation.user === user, and re-runs policy server-side.
+        const operation = verifyPreparedOperation(input.operation, { confirmOperationHash: input.confirmOperationHash, user });
         if (operation.methodId !== 'profile.create') {
           throw new Error('This tool only commits profile.create operations.');
         }
-        if (operation.operationHash !== input.confirmOperationHash) {
-          throw new Error('confirmOperationHash does not match the operation.');
-        }
-        if (!operation.policyDecision.allowed) {
-          throw new Error(`Operation not allowed by policy: ${operation.policyDecision.reason}`);
-        }
-        const user = requireUser(options.onBehalfOf);
-        const check = idempotency.check(input.idempotencyKey, operation.operationHash);
+        const scopedKey = `${user}:${input.idempotencyKey}`;
+        const check = idempotency.check(scopedKey, operation.operationHash);
         if (check.hit) return json(check.result);
         const response = await client.userRequestWithToken<{ oauth_token?: string; oauth_token_secret?: string }>('profile.create', 'POST', operation.params);
         if (!response.oauth_token || !response.oauth_token_secret) {
           throw new Error('FatSecret did not return a token pair from profile.create.');
         }
         store.setTokens(user, { oauthToken: response.oauth_token, oauthTokenSecret: response.oauth_token_secret, authMode: 'profile_create', connectedAt: Date.now() });
-        idempotency.record(input.idempotencyKey, operation.operationHash, { connected: true });
+        idempotency.record(scopedKey, operation.operationHash, { connected: true });
         return json({ connected: true });
       }),
   );

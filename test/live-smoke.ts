@@ -20,12 +20,13 @@ async function main(): Promise<void> {
   }
   const store = new TokenStore();
   if (!store.getTokens(devUser)) {
-    console.error(`No linked token for ${devUser} — run the auth flow first. Skipping private-data check.`);
+    console.error('No linked token for FATSECRET_DEV_USER — run the auth flow first. Skipping private-data check.');
     return;
   }
-  console.error(`Fetching profile for ${devUser}...`);
+  console.error('Fetching profile for FATSECRET_DEV_USER...');
   const profile = await client.userRequest(devUser, store, 'profile.get', {});
-  console.error(JSON.stringify(profile, null, 2));
+  // Profile data is personal; report only that the call succeeded.
+  console.error(`profile.get ok (${profile && typeof profile === 'object' ? 'object' : typeof profile} response).`);
 }
 
 main().catch(error => {

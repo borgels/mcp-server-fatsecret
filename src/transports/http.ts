@@ -6,6 +6,7 @@ import { TokenStore } from '../fatsecret/token-store.js';
 import {
   assertAllowedOrigin,
   assertAuthorized,
+  assertSafeHttpStartup,
   corsHeaders,
   getHttpConfig,
   HttpRequestError,
@@ -14,6 +15,12 @@ import {
 } from './http-helpers.js';
 
 const config = getHttpConfig();
+try {
+  assertSafeHttpStartup(config);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
 
 function trustForwardedUser(): boolean {
   return process.env.FATSECRET_TRUST_FORWARDED_USER === 'true';

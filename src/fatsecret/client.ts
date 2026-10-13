@@ -74,8 +74,9 @@ export class FatSecretClient {
       throw new Error(`${methodId} is not a public method; call userRequest() instead.`);
     }
     assertMethodAvailable(method);
+    const cleaned = cleanParams(params);
     const token = await this.oauth2.getToken();
-    const url = buildUrl(this.baseUrl, { method: methodId, format: 'json', ...cleanParams(params) });
+    const url = buildUrl(this.baseUrl, { ...cleaned, method: methodId, format: 'json' });
     return this.send(url, method.httpMethod, { Authorization: `Bearer ${token}` });
   }
 
@@ -102,7 +103,7 @@ export class FatSecretClient {
     token?: OAuth1Token,
   ): Promise<T> {
     this.requireConfigured();
-    const allParams = { method: methodId, format: 'json', ...cleanParams(params) };
+    const allParams = { ...cleanParams(params), method: methodId, format: 'json' };
     const signed = this.signer.authorizeParams({ method: httpMethod, url: this.baseUrl, params: allParams, token });
     const url = httpMethod === 'GET' ? buildUrl(this.baseUrl, signed) : this.baseUrl;
     return this.send(url, httpMethod, undefined, httpMethod === 'POST' ? signed : undefined);
@@ -112,7 +113,7 @@ export class FatSecretClient {
   async oauth1Call<T = unknown>(path: string, params: FatSecretParams, token?: OAuth1Token): Promise<T> {
     this.requireConfigured();
     const url = `https://authentication.fatsecret.com${path}`;
-    const signed = this.signer.authorizeParams({ method: 'POST', url, params: cleanParams(params), token });
+    const signed = this.signer.authorizeParams({ method: 'POST', url, params: cleanParams(params, { allowOAuth: true }), token });
     return this.send(url, 'POST', undefined, signed, 'form');
   }
 
@@ -149,9 +150,22 @@ export class FatSecretClient {
   }
 }
 
-function cleanParams(params: FatSecretParams): Record<string, string> {
+/**
+ * Parameter names the client controls itself: the RPC method selector, the
+ * response format, and every OAuth1 protocol parameter. Caller-supplied params
+ * may never set these.
+ */
+export function isReservedParamName(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower === 'method' || lower === 'format' || lower.startsWith('oauth_');
+}
+
+function cleanParams(params: FatSecretParams, opts: { allowOAuth?: boolean } = {}): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(params)) {
+    if (opts.allowOAuth ? k === 'method' || k === 'format' : isReservedParamName(k)) {
+      throw new Error(`Parameter "${k}" is reserved and cannot be supplied by the caller.`);
+    }
     if (v !== undefined) {
       out[k] = String(v);
     }

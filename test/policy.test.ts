@@ -45,7 +45,7 @@ describe('write policy', () => {
     });
     expect(operation.dryRun).toBe(true);
     expect(operation.operationHash).toHaveLength(64);
-    expect(() => verifyPreparedOperation(operation)).not.toThrow();
+    expect(() => verifyPreparedOperation(operation, { confirmOperationHash: operation.operationHash, user: 'alice@example.com' })).not.toThrow();
   });
 
   it('detects a tampered prepared operation', () => {
@@ -57,7 +57,9 @@ describe('write policy', () => {
       params: { food_id: '1', serving_id: '2', number_of_units: 1, meal: 'lunch' },
       reason: 'lunch',
     });
-    expect(() => verifyPreparedOperation({ ...operation, params: { ...operation.params, number_of_units: 5 } })).toThrow('hash does not match');
+    expect(() =>
+      verifyPreparedOperation({ ...operation, params: { ...operation.params, number_of_units: 5 } }, { confirmOperationHash: operation.operationHash, user: 'alice@example.com' }),
+    ).toThrow('signature does not match');
   });
 
   it('detects a prepared operation replayed under a different identity', () => {
@@ -69,7 +71,10 @@ describe('write policy', () => {
       params: { food_id: '1', serving_id: '2', number_of_units: 1, meal: 'lunch' },
       reason: 'lunch',
     });
-    expect(() => verifyPreparedOperation({ ...operation, user: 'bob@example.com' })).toThrow('hash does not match');
+    expect(() => verifyPreparedOperation({ ...operation, user: 'bob@example.com' }, { confirmOperationHash: operation.operationHash, user: 'bob@example.com' })).toThrow(
+      'signature does not match',
+    );
+    expect(() => verifyPreparedOperation(operation, { confirmOperationHash: operation.operationHash, user: 'bob@example.com' })).toThrow('different identity');
   });
 });
 
