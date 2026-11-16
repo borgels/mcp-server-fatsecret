@@ -147,3 +147,34 @@ describe('secret redaction', () => {
     expect(redactSecrets('Authorization: Bearer sometoken123')).toContain('[REDACTED]');
   });
 });
+
+describe('FatSecret client hardening', () => {
+  it('never follows redirects for the token request or API calls', async () => {
+    const calls: RequestInit[] = [];
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      calls.push(init);
+      return calls.length === 1
+        ? new Response(JSON.stringify({ access_token: 'AT', expires_in: 86400 }), { status: 200 })
+        : new Response(null, { status: 302, headers: { location: 'https://elsewhere.example/' } });
+    }) as unknown as typeof fetch;
+    const oauth2 = new OAuth2ClientCredentials({ clientId: 'ck', clientSecret: 'cs', fetchImpl: fetchMock });
+    const client = new FatSecretClient({ consumerKey: 'ck', consumerSecret: 'cs', fetchImpl: fetchMock, oauth2 });
+    await expect(client.publicRequest('foods.search', { search_expression: 'apple' })).rejects.toThrow(/302/);
+    expect(calls).toHaveLength(2);
+    expect(calls.every(init => init.redirect === 'manual')).toBe(true);
+  });
+
+  it('rejects an invalid FATSECRET_TIMEOUT_MS instead of using NaN', () => {
+    const saved = process.env.FATSECRET_TIMEOUT_MS;
+    try {
+      process.env.FATSECRET_TIMEOUT_MS = '30s';
+      expect(() => new FatSecretClient()).toThrow(/FATSECRET_TIMEOUT_MS/);
+      expect(() => new OAuth2ClientCredentials()).toThrow(/FATSECRET_TIMEOUT_MS/);
+      process.env.FATSECRET_TIMEOUT_MS = '5000';
+      expect(() => new FatSecretClient()).not.toThrow();
+    } finally {
+      if (saved === undefined) delete process.env.FATSECRET_TIMEOUT_MS;
+      else process.env.FATSECRET_TIMEOUT_MS = saved;
+    }
+  });
+});

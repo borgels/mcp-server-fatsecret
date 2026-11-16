@@ -1,3 +1,4 @@
+import { readEnvInteger } from '../config-env.js';
 import { FatSecretHttpError } from '../errors.js';
 import { findMethod, premierEnabled, type FatSecretMethod } from './catalog.js';
 import { OAuth1Signer, type OAuth1Token } from './oauth1.js';
@@ -56,7 +57,7 @@ export class FatSecretClient {
     this.baseUrl = options.baseUrl ?? process.env.FATSECRET_BASE_URL ?? DEFAULT_BASE_URL;
     assertHttpsOrLoopback(this.baseUrl);
     this.fetchImpl = options.fetchImpl ?? fetch;
-    this.timeoutMs = options.timeoutMs ?? Number(process.env.FATSECRET_TIMEOUT_MS ?? 30_000);
+    this.timeoutMs = options.timeoutMs ?? readEnvInteger('FATSECRET_TIMEOUT_MS', 30_000, { min: 1, max: 600_000 });
     this.signer = new OAuth1Signer(this.consumerKey, this.consumerSecret);
     this.oauth2 = options.oauth2 ?? new OAuth2ClientCredentials({ fetchImpl: this.fetchImpl });
   }
@@ -131,6 +132,8 @@ export class FatSecretClient {
         ...(formBody ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
       },
       body: formBody ? new URLSearchParams(formBody).toString() : undefined,
+      // Never follow redirects: signed requests and credentials must only reach the configured origin.
+      redirect: 'manual',
       signal: AbortSignal.timeout(this.timeoutMs),
     });
 
