@@ -109,6 +109,14 @@ describe('HTTP transport (integration)', () => {
     ).rejects.toThrow(/FATSECRET_TRUST_FORWARDED_USER/);
   });
 
+  it('logs rejected requests by path only, without the query string', async () => {
+    const port = await start();
+    const reply = await send(port, { path: '/mcp?token=leak-me', headers: mcpHeaders, body: toolsList });
+    expect(reply.status).toBe(401);
+    expect(logs.some(line => line.includes('POST /mcp from'))).toBe(true);
+    expect(logs.some(line => line.includes('leak-me'))).toBe(false);
+  });
+
   it('returns 401 with WWW-Authenticate without or with a wrong token', async () => {
     const port = await start();
     const missing = await send(port, { headers: mcpHeaders, body: toolsList });

@@ -56,7 +56,7 @@ export function createHttpRequestHandler(config: HttpConfig, options: HttpServer
 
   return async (req: IncomingMessage, res: ServerResponse) => {
     const remote = req.socket.remoteAddress ?? 'unknown';
-    const describeRequest = () => `${req.method ?? '-'} ${(req.url ?? '').slice(0, 200)} from ${remote}`;
+    const describeRequest = () => `${req.method ?? '-'} ${(req.url ?? '').split('?')[0]!.slice(0, 200)} from ${remote}`;
     try {
       const path = (req.url ?? '/').split('?')[0];
 
