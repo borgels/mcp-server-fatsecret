@@ -5,8 +5,7 @@ food/recipe search plus your own food diary, weight, exercise, saved meals,
 and favorites. Built for multiple named individuals sharing one hosted
 instance, each linking their own real FatSecret account.
 
-This is an independent, unofficial project. Not affiliated with or endorsed
-by FatSecret.
+This is an independent, unofficial project. It is not developed, endorsed or supported by FatSecret.
 
 ## Scope
 
@@ -23,7 +22,7 @@ by FatSecret.
 ## Multi-user model
 
 This server is designed to run as **one shared instance** behind a gateway
-that authenticates callers (e.g. via Entra ID) and forwards the verified
+that authenticates callers (e.g. via your identity provider) and forwards the verified
 caller identity as `X-MCP-User`. Each person's FatSecret OAuth1 token is
 stored in its own encrypted row, keyed by that identity — nobody can reach
 anyone else's diary, weight, or exercise data. If `FATSECRET_TRUST_FORWARDED_USER`
@@ -163,7 +162,48 @@ encrypted at rest (AES-256-GCM).
 callers and forwards their identity as `X-MCP-User` (only trusted when
 `FATSECRET_TRUST_FORWARDED_USER=true`). The bearer token is compared in constant time, and the
 server refuses to start if `FATSECRET_TRUST_FORWARDED_USER=true` but
-`MCP_HTTP_TOKEN` is empty.
+`MCP_HTTP_TOKEN` is empty (`MCP_HTTP_ALLOW_UNAUTHENTICATED` does not override
+this).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MCP_HTTP_HOST` / `HOST` | `127.0.0.1` | Bind address. |
+| `PORT` | `3000` | Listen port (1-65535). |
+| `MCP_HTTP_TOKEN` | - | Bearer token required on `/mcp`; at least 32 printable ASCII characters (e.g. `openssl rand -hex 32`). Required for a non-loopback bind or `MCP_ALLOW_ANY_ORIGIN=true`. |
+| `MCP_HTTP_ALLOW_UNAUTHENTICATED` | `false` | Serve `/mcp` without a token on a non-loopback bind or with `MCP_ALLOW_ANY_ORIGIN` (logs a warning). Only when access is restricted by other means. |
+| `MCP_MAX_BODY_BYTES` | `10485760` | Largest accepted request body; larger bodies get 413. |
+| `MCP_ALLOWED_ORIGINS` | localhost origins | Comma-separated exact `Origin` values allowed. |
+| `MCP_ALLOW_ANY_ORIGIN` | `false` | Allow any `Origin`; requires `MCP_HTTP_TOKEN`. |
+| `MCP_ALLOWED_HOSTS` | see below | Comma-separated host names accepted in the `Host` header. |
+| `MCP_AUTH_FAILURE_LIMIT` | `20` | Failed authentications per client address and window before further failures get 429; `0` disables. |
+| `MCP_AUTH_FAILURE_WINDOW_MS` | `60000` | Window for the limit above. |
+| `FATSECRET_TIMEOUT_MS` | `30000` | Upstream request timeout (1-600000 ms). |
+
+The server refuses to start when it would expose `/mcp` without a token: a
+non-loopback bind or `MCP_ALLOW_ANY_ORIGIN=true` without `MCP_HTTP_TOKEN`
+(unless `MCP_HTTP_ALLOW_UNAUTHENTICATED=true`). Invalid numbers or booleans in
+these variables also stop it at startup instead of being ignored. On a loopback
+bind, only `localhost`, `127.0.0.1`, `[::1]` or the bind address are accepted
+in the `Host` header (DNS-rebinding protection); set `MCP_ALLOWED_HOSTS` to
+change this. `GET /healthz` answers without authentication.
+
+## Security model
+
+- Each person links their own FatSecret account (OAuth1); diary, weight and
+  exercise tools only use the token stored for the identity in `X-MCP-User`.
+  That header is only trusted with `FATSECRET_TRUST_FORWARDED_USER=true`, and
+  only behind `MCP_HTTP_TOKEN`.
+- Public food/recipe search uses one shared app credential (OAuth2 client
+  credentials) for all callers.
+- User authentication and authorization belong in an identity-aware gateway in
+  front of this server: it signs the user in, sets `X-MCP-User` and holds the
+  bearer token. This server does not authenticate end users itself.
+- Tool access is not data access: whoever can call `/mcp` with the bearer and a
+  given `X-MCP-User` value acts as that user against FatSecret.
+- Upstream requests never follow redirects, so signed requests and credentials
+  are only sent to the configured API origin.
+- The HTTP server does not terminate TLS. Put it behind a TLS-terminating proxy
+  or keep it on a private network.
 
 ## Verification
 

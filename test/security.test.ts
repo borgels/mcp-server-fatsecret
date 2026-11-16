@@ -258,3 +258,12 @@ describe('HTTP hardening', () => {
     expect(() => assertSafeHttpStartup(base, {})).not.toThrow();
   });
 });
+
+describe('version', () => {
+  it('reports the package.json version', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { PACKAGE_VERSION } = await import('../src/version.js');
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
+    expect(PACKAGE_VERSION).toBe(pkg.version);
+  });
+});

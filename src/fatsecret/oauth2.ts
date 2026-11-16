@@ -1,3 +1,4 @@
+import { readEnvInteger } from '../config-env.js';
 import { FatSecretHttpError } from '../errors.js';
 
 /**
@@ -48,7 +49,7 @@ export class OAuth2ClientCredentials {
     this.scope = options.scope ?? process.env.FATSECRET_OAUTH2_SCOPE ?? 'basic';
     this.tokenUrl = options.tokenUrl ?? process.env.FATSECRET_OAUTH2_TOKEN_URL ?? 'https://oauth.fatsecret.com/connect/token';
     this.fetchImpl = options.fetchImpl ?? fetch;
-    this.timeoutMs = options.timeoutMs ?? Number(process.env.FATSECRET_TIMEOUT_MS ?? 30_000);
+    this.timeoutMs = options.timeoutMs ?? readEnvInteger('FATSECRET_TIMEOUT_MS', 30_000, { min: 1, max: 600_000 });
   }
 
   async getToken(): Promise<string> {
@@ -77,6 +78,8 @@ export class OAuth2ClientCredentials {
         Authorization: `Basic ${basicAuth}`,
       },
       body: body.toString(),
+      // Never follow redirects: signed requests and credentials must only reach the configured origin.
+      redirect: 'manual',
       signal: AbortSignal.timeout(this.timeoutMs),
     });
     const json = (await res.json().catch(() => null)) as TokenResponse | null;
