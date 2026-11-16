@@ -1,0 +1,73 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.borgels/mcp-server-fatsecret",
+  "title": "FatSecret",
+  "description": "MCP server for the FatSecret Platform API: food diary, weight, exercise and food search.",
+  "repository": {
+    "url": "https://github.com/borgels/mcp-server-fatsecret",
+    "source": "github"
+  },
+  "version": "0.2.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "mcp-server-fatsecret",
+      "version": "0.2.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "FATSECRET_CONSUMER_KEY",
+          "description": "OAuth 1.0a consumer key of the FatSecret Platform app.",
+          "isRequired": true
+        },
+        {
+          "name": "FATSECRET_CONSUMER_SECRET",
+          "description": "OAuth 1.0a shared secret of the FatSecret Platform app.",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "FATSECRET_OAUTH2_CLIENT_ID",
+          "description": "OAuth 2.0 client id for food and recipe search. Defaults to the consumer key."
+        },
+        {
+          "name": "FATSECRET_OAUTH2_CLIENT_SECRET",
+          "description": "OAuth 2.0 client secret. Defaults to the consumer secret.",
+          "isSecret": true
+        },
+        {
+          "name": "FATSECRET_ENCRYPTION_KEY",
+          "description": "Key that encrypts stored per-user tokens (at least 16 characters).",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "FATSECRET_STORE_PATH",
+          "description": "Path of the encrypted token store.",
+          "format": "filepath",
+          "default": "/data/store.json"
+        },
+        {
+          "name": "FATSECRET_DEV_USER",
+          "description": "Identity used for per-user tools over stdio."
+        },
+        {
+          "name": "FATSECRET_PREMIER",
+          "description": "Set to true only if the FatSecret Platform app is on the Premier tier.",
+          "format": "boolean",
+          "default": "false"
+        },
+        {
+          "name": "FATSECRET_ENABLE_WRITES",
+          "description": "Enable the diary write tools.",
+          "format": "boolean",
+          "default": "false"
+        }
+      ]
+    }
+  ]
+}
