@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Published to npm and the MCP Registry from tagged releases.
+- stdio: the token store defaults to `~/.mcp-server-fatsecret/store.json` when `FATSECRET_STORE_PATH` is unset.
+
 ## 0.2.0
 
 ### Changes

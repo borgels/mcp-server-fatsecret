@@ -1,6 +1,7 @@
 {
   "name": "mcp-server-fatsecret",
   "version": "0.2.0",
+  "mcpName": "io.github.borgels/mcp-server-fatsecret",
   "description": "MCP server for the FatSecret Platform API with per-user OAuth1 (own diary, weight, exercise, and food/recipe search).",
   "type": "module",
   "main": "./dist/stdio.js",
