@@ -47,13 +47,14 @@
         },
         {
           "name": "FATSECRET_STORE_PATH",
-          "description": "Path of the encrypted token store.",
-          "format": "filepath",
-          "default": "/data/store.json"
+          "description": "Writable path of the encrypted token store. Defaults to ~/.mcp-server-fatsecret/store.json.",
+          "format": "filepath"
         },
         {
           "name": "FATSECRET_DEV_USER",
-          "description": "Identity used for per-user tools over stdio."
+          "description": "Identity the per-user tools act as over stdio, e.g. your email address. The diary and auth tools refuse without it.",
+          "isRequired": true,
+          "placeholder": "you@example.com"
         },
         {
           "name": "FATSECRET_PREMIER",

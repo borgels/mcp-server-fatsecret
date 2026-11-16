@@ -28,8 +28,10 @@ stored in its own encrypted row, keyed by that identity — nobody can reach
 anyone else's diary, weight, or exercise data. If `FATSECRET_TRUST_FORWARDED_USER`
 is unset (or the header is missing), every data/auth tool refuses outright.
 
-For local development without a gateway, set `FATSECRET_DEV_USER` to act as
-a single fixed identity over stdio.
+Over stdio there is no gateway: set `FATSECRET_DEV_USER` to the identity the
+per-user tools act as (required for the diary and auth tools). Tokens are then
+stored in `~/.mcp-server-fatsecret/store.json` unless `FATSECRET_STORE_PATH`
+is set.
 
 ## Setup
 
