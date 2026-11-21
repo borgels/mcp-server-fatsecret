@@ -1,6 +1,6 @@
 {
   "name": "mcp-server-fatsecret",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "mcpName": "io.github.borgels/mcp-server-fatsecret",
   "description": "MCP server for the FatSecret Platform API with per-user OAuth1 (own diary, weight, exercise, and food/recipe search).",
   "type": "module",
@@ -12,6 +12,7 @@
     "dist",
     "README.md",
     "LICENSE",
+    "NOTICE",
     "CHANGELOG.md",
     ".env.example"
   ],
@@ -39,7 +40,7 @@
     "oauth1"
   ],
   "author": "",
-  "license": "Apache-2.0",
+  "license": "FSL-1.1-ALv2",
   "engines": {
     "node": ">=20.11"
   },
